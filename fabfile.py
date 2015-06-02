@@ -1,53 +1,37 @@
 from fabric.api import local,parallel
+from fabric.colors import blue, cyan, green, magenta, red, white, yellow
+from paver.easy import path
+from functools import partial
 from coffeescript import compile as compile_coffee
 from jsmin import jsmin
-from uglipyjs import compile as _uglify
+from uglipyjs import compile as _uglifyjs
 import os
 from bcrypt import hashpw, gensalt
 import sqlalchemy as sa
 from sqlalchemy.sql.expression import column,table
-from appdb import Model,User,Email,Project,Document
 
-pw = lambda data: hashpw(data,gensalt())
+def _error(text):
+    return red(text)
+
+def _info(text):
+    return white(text)
 
 def _print(arg,*args,**kwargs):
     print arg
     print (args or '')
     print (kwargs or '')
 
-_id_by_name = lambda name: User.query.filter(
-                                User.username == name
-                            ).first().id
-
-def seed_db():
-    Model.metadata.bind = Model.engine
-    Model.metadata.bind.execute(
-            User.__table__.insert().values([
-                dict(
-                    username='jstacoder',_password_hash=pw('jstacoder')
-                ),
-                dict(
-                    username='jessicarrr',_password_hash=pw('jessicarrr')
-                ),
-            ])
-    )
-    users = [
-        _id_by_name('jstacoder'),
-        _id_by_name('jessicarrr')
-    ]
-    Project(name='projA',users=users).save()
-    Project(name='projB',users=users).save()
-    Project(name='projC',users=[users[0]]).save()
-    Project(name='projD',users=[users[1]]).save()
-    Email(address='jstacoder@gmail.com',user_id=_id_by_name('jstacoder')).save()
-    Email(address='jessicarrr@gmail.com',user_id=_id_by_name('jessicarrr')).save()
+_error = lambda text: red(text)
+_info = lambda text: white(text)
+_write = lambda data,name:open(name,'w').write(data)
+_process_data = lambda func,data,write_out=None,filename=None,*args,**kwargs: _write(func(data,*args,**kwargs),filename) if write_out else func(data,*args,**kwargs)
+_coffee = partial(_process_data,compile_coffee)
+_jsmin = partial(_process_data,jsmin)
+_uglify = partial(_process_data,_uglifyjs)
+PATH_FUNC = lambda dirname,recurse=None: list(path(dirname).files()) if not recurse else list(path(dirname).walkfiles())
+_clean = lambda dirname,ext,recurse=False: (map(lambda x: (os.remove(str(x)) or _error('deleted {}'.format(str(x)))),[x for x in PATH_FUNC(dirname,recurse) if (ext and x.endswith(ext))]))
 
 
-
-def _write(data,name):
-    with open(name,'w') as f:
-        f.write(data)
-    return True
 
 @parallel
 def clean(name,verbose=False):
@@ -73,7 +57,6 @@ def coffee(data,write_out=False,filename=None,verbose=False):
     else:
         with open(filename,'w') as f:
             f.write(c)
-    return True
 
 def minify(data,write_out=False,filename=None,verbose=False):
     if verbose:
@@ -137,8 +120,6 @@ def process_files(file_list,build=BUILD_TYPES['DEV'],verbose=False):
                 f.write(d)
 
         print 'wrote all files to main.min.js'
-
-
 
 def p_js(build='prod',verbose=False):
     file_list = [
